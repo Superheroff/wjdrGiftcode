@@ -1,5 +1,4 @@
-# 使用官方 Python 3.9 镜像（基于 Debian）
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 # 设置工作目录
 WORKDIR /app
@@ -22,7 +21,6 @@ RUN mkdir -p /var/log/uwsgi && \
 
 # 复制项目文件
 COPY requirements.txt .
-
 # 安装 Python 依赖
 RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.bfsu.edu.cn/pypi/web/simple/
 
