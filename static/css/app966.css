@@ -1,0 +1,720 @@
+/* 主题切换按钮样式 */
+.toggle-cont {
+    font-size: 17px;
+    position: relative;
+    display: inline-block;
+    width: 3.5em;
+    height: 2em;
+    transform-style: preserve-3d;
+    perspective: 500px;
+    animation: toggle__animation 3s infinite;
+}
+
+.toggle-cont::before {
+    content: "";
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    left: 0;
+    top: 0;
+    filter: blur(20px);
+    z-index: -1;
+    border-radius: 50px;
+    background-color: #d8ff99;
+    background-image: radial-gradient(at 21% 46%, hsla(183, 65%, 60%, 1) 0px, transparent 50%),
+    radial-gradient(at 23% 25%, hsla(359, 74%, 70%, 1) 0px, transparent 50%),
+    radial-gradient(at 20% 1%, hsla(267, 83%, 75%, 1) 0px, transparent 50%),
+    radial-gradient(at 86% 87%, hsla(204, 69%, 68%, 1) 0px, transparent 50%),
+    radial-gradient(at 99% 41%, hsla(171, 72%, 77%, 1) 0px, transparent 50%),
+    radial-gradient(at 55% 24%, hsla(138, 60%, 62%, 1) 0px, transparent 50%);
+}
+
+.toggle-cont input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #fdfefedc;
+    transition: .4s;
+    border-radius: 30px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 1.4em;
+    width: 1.4em;
+    left: 0.3em;
+    bottom: 0.35em;
+    transition: .4s;
+    border-radius: 50%;
+    box-shadow: rgba(0, 0, 0, 0.17) 0px -10px 10px 0px inset,
+    rgba(0, 0, 0, 0.09) 0px -1px 15px -8px;
+    background-color: #ff99fd;
+    background-image: radial-gradient(at 81% 39%, hsla(327, 79%, 79%, 1) 0px, transparent 50%),
+    radial-gradient(at 11% 72%, hsla(264, 64%, 79%, 1) 0px, transparent 50%),
+    radial-gradient(at 23% 20%, hsla(75, 98%, 71%, 1) 0px, transparent 50%);
+}
+
+.input__check:checked + .slider {
+    background-color: #17202A;
+}
+
+.input__check:checked + .slider:before {
+    transform: translateX(1.5em);
+}
+
+@keyframes toggle__animation {
+    0%, 100% {
+        transform: translateY(-10px) rotateX(15deg) rotateY(-20deg);
+    }
+
+    50% {
+        transform: translateY(0px) rotateX(15deg) rotateY(-20deg);
+    }
+}
+
+/* --------------------- 滚动条样式 --------------------- */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-track {
+    background: #374151;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #4b5563;
+}
+
+/* 淡入动画 */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* 旋转动画 */
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+/* --------------------- 弹幕样式 --------------------- */
+.danmaku-container {
+    height: 160px;
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.05) 0%, transparent 20%, transparent 80%, rgba(59, 130, 246, 0.05) 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.danmaku-item {
+    position: absolute;
+    animation-timing-function: linear;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.danmaku-item.staggered {
+    left: 100%;
+    transform: translateX(0);
+}
+
+@keyframes danmaku-scroll-staggered {
+    0% {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    90% {
+        transform: translateX(calc(-100vw - 100px));
+        opacity: 1;
+    }
+    100% {
+        transform: translateX(calc(-100vw - 100px));
+        opacity: 0;
+    }
+}
+
+.danmaku-avatar {
+    width: 68px !important;
+    height: 68px !important;
+    min-width: 68px !important;
+    min-height: 68px !important;
+    border-radius: 50%;
+    border: 3px solid white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    object-fit: cover;
+    aspect-ratio: 1 / 1;
+    display: block;
+}
+
+.danmaku-item:hover .danmaku-avatar {
+    width: 95px !important;
+    height: 95px !important;
+    min-width: 95px !important;
+    min-height: 95px !important;
+    border-width: 4px !important;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2) !important;
+    transform: scale(1.1) !important;
+    z-index: 10;
+}
+
+.danmaku-info {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.8);
+    opacity: 0;
+    text-align: center;
+    font-weight: 600;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+    width: 90px;
+    mix-blend-mode: normal;
+}
+
+.danmaku-item:hover .danmaku-info {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.danmaku-nickname {
+    font-size: 11px;
+    line-height: 1.2;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: white;
+    background: rgba(0, 0, 0, 0.85);
+    padding: 3px 10px;
+    border-radius: 8px;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    font-weight: 700;
+}
+
+.danmaku-amount {
+    font-size: 10px;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    padding: 3px 10px;
+    border-radius: 8px;
+    color: white;
+    font-weight: 700;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+/* --------------------- 关于卡片样式 --------------------- */
+.card {
+    --dark: #212121;
+    --darker: #111111;
+    --semidark: #2c2c2c;
+    --lightgray: #e8e8e8;
+    --unit: 10px;
+
+    background-color: var(--darker);
+    border-radius: var(--unit);
+    position: relative;
+    padding: 1.25rem; /* 增加内边距 */
+    overflow: hidden;
+    width: 240px; /* 给一个固定的合适宽度，防止移动端过窄 */
+    max-width: 90vw; /* 响应式：不超过屏幕宽度 */
+}
+
+.card::before {
+    content: "";
+    position: absolute;
+    width: 120%;
+    height: 20%;
+    top: 40%;
+    left: -10%;
+    background: linear-gradient(144deg, #af40ff, #5b42f3 50%, #00ddeb);
+    animation: keyframes-floating-light 2.5s infinite ease-in-out;
+    filter: blur(20px);
+}
+
+@keyframes keyframes-floating-light {
+    0% {
+        transform: rotate(-5deg) translateY(-5%);
+        opacity: 0.5;
+    }
+
+    50% {
+        transform: rotate(5deg) translateY(5%);
+        opacity: 1;
+    }
+
+    100% {
+        transform: rotate(-5deg) translateY(-5%);
+        opacity: 0.5;
+    }
+}
+
+.card::after {
+    content: "";
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0%;
+    left: 0%;
+    background: linear-gradient(144deg, #af40ff, #5b42f3 50%, #00ddeb);
+    filter: blur(20px);
+    pointer-events: none;
+    animation: keyframes-intro 1s ease-in forwards;
+}
+
+@keyframes keyframes-intro {
+    100% {
+        transform: translate(-100%);
+        opacity: 0;
+    }
+}
+
+.card .image {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    animation: keyframes-floating-img 10s ease-in-out infinite;
+}
+
+@keyframes keyframes-floating-img {
+    0% {
+        transform: translate(-2%, 2%) scaleY(0.95) rotate(-5deg);
+    }
+
+    50% {
+        transform: translate(2%, -2%) scaleY(1) rotate(5deg);
+    }
+
+    100% {
+        transform: translate(-2%, 2%) scaleY(0.95) rotate(-5deg);
+    }
+}
+
+.card .heading {
+    font-weight: 600;
+    font-size: small;
+    text-align: center;
+    margin-top: calc(var(--unit) * -2);
+    padding-block: var(--unit);
+    color: var(--lightgray);
+    animation: keyframes-flash-text 0.5s infinite;
+}
+
+@keyframes keyframes-flash-text {
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.card .icons {
+    display: flex;
+    justify-content: center;
+    gap: 12px; /* 固定间距 */
+    margin-top: 10px;
+}
+
+.card .icons a {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #2a2a2a;
+    border-radius: 10px;
+    transition: all 0.3s ease;
+}
+
+.card .icons a:hover {
+    transform: translateY(-3px);
+}
+/* --------------------- 打赏弹窗样式 --------------------- */
+#reward-modal {
+    z-index: 60;
+}
+
+#reward-modal > div {
+    animation: modalSlideIn 0.3s ease-out;
+}
+
+#reward-modal .relative.bg-white {
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+#reward-modal .relative.bg-white:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.dark #reward-modal .relative.bg-white:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+#reward-modal .bg-white.p-2 {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+    min-width: 160px;
+    z-index: 100;
+}
+
+#reward-modal img[alt="支付宝二维码"],
+#reward-modal img[alt="微信支付二维码"] {
+    width: 144px !important;
+    height: 144px !important;
+    min-width: 144px !important;
+    min-height: 144px !important;
+    object-fit: cover;
+    object-position: center;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: default !important;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* --------------------- 添加兑换码弹窗样式 --------------------- */
+#message-modal {
+    z-index: 9999;
+}
+
+#copy-toast {
+    z-index: 9998;
+}
+
+#addcode-modal {
+    z-index: 60;
+}
+
+#addcode-modal > div {
+    animation: modalSlideIn 0.3s ease-out;
+}
+
+/* 类型选项样式 */
+.type-option {
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.type-option:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.dark .type-option:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.type-option.border-blue-500 {
+    border-width: 2px;
+    border-color: #3b82f6;
+}
+
+.dark .type-option.dark\:border-blue-400 {
+    border-color: #60a5fa;
+}
+
+.type-option.border-blue-500,
+.type-option.dark\:border-blue-400 {
+    background-color: rgba(59, 130, 246, 0.05);
+}
+
+.dark .type-option.border-blue-500,
+.dark .type-option.dark\:border-blue-400 {
+    background-color: rgba(96, 165, 250, 0.1);
+}
+
+/* 检查标记 */
+.checkmark {
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.checkmark.opacity-100 {
+    transform: scale(1.2);
+}
+
+
+/* 修复 iOS 日期输入框显示问题 */
+#expiry-date {
+    -webkit-appearance: none;
+    appearance: none;
+    box-sizing: border-box;
+    width: 100%;
+    /* 确保边框不会超出容器 */
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    /* 修复 iOS 内边距问题 */
+    padding: 0.5rem 1rem;
+    font-size: 16px; /* 防止 iOS 缩放 */
+    line-height: 1.5;
+    min-height: 24px; /* iOS 最小点击区域 */
+}
+
+.dark #expiry-date {
+    border-color: #4b5563;
+    background-color: rgba(55, 65, 81, 0.5);
+    color: white;
+}
+
+/* iOS Safari 特定修复 */
+@supports (-webkit-touch-callout: none) {
+    #expiry-date {
+        /* 确保在 iOS 上正确显示 */
+        height: 24px;
+        padding: 12px 16px;
+    }
+
+    /* 修复日期选择器按钮 */
+    input[type="date"]::-webkit-calendar-picker-indicator {
+        padding: 0;
+        margin: 0;
+        width: 44px;
+        height: 24px;
+        opacity: 0.7;
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+    }
+
+    #expiry-date:focus {
+        outline: none;
+        border-width: 2px;
+        border-color: #3b82f6;
+        /* iOS 上移除默认的蓝色边框 */
+        -webkit-tap-highlight-color: transparent;
+    }
+}
+
+/* 移动端响应式调整 */
+@media (max-width: 640px) {
+    #expiry-date {
+        font-size: 16px; /* 防止 iOS 缩放 */
+        min-height: 48px;
+    }
+
+    .dark #expiry-date {
+        background-color: rgba(55, 65, 81, 0.8);
+    }
+}
+
+/* 日期选择器容器的额外保护 */
+#expiry-date-container {
+    position: relative;
+    overflow: visible; /* 确保内容不会被裁剪 */
+}
+
+/* 确保日期输入框在 iOS 上的点击区域 */
+#expiry-date {
+    /* 确保整个区域可点击 */
+    cursor: pointer;
+}
+
+/* 聚焦状态优化 */
+#expiry-date:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+/* 防止 iOS 上的文字截断 */
+#expiry-date::-webkit-datetime-edit {
+    padding: 0;
+    overflow: visible;
+}
+
+#expiry-date::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+}
+
+/* 日期字段状态 */
+#expiry-date-container {
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+#expiry-date-container:not(.opacity-100) {
+    opacity: 0.8;
+}
+
+/* 必填标记 */
+#date-required-indicator {
+    font-weight: bold;
+    color: #ef4444;
+}
+
+.dark #date-required-indicator {
+    color: #f87171;
+}
+
+/* 状态徽章 */
+#date-status-badge {
+    transition: all 0.3s ease;
+}
+
+/* 输入框验证状态 */
+#expiry-date.border-red-500 {
+    border-color: #ef4444 !important;
+}
+
+.dark #expiry-date.border-red-500 {
+    border-color: #dc2626 !important;
+}
+
+#expiry-date.border-green-500 {
+    border-color: #10b981 !important;
+}
+
+.dark #expiry-date.border-green-500 {
+    border-color: #34d399 !important;
+}
+
+/* 按钮渐变效果 */
+#submit-addcode {
+    background-size: 200% auto;
+    transition: all 0.3s ease;
+    background-image: linear-gradient(to right, #3b82f6 0%, #1d4ed8 51%, #3b82f6 100%);
+}
+
+#submit-addcode:hover:not(:disabled) {
+    background-position: right center;
+    transform: translateY(-2px);
+}
+
+#submit-addcode:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: #93c5fd;
+    transform: none;
+    box-shadow: none;
+}
+
+/* 表单输入框焦点效果 */
+#code-input:focus,
+#admin-password:focus,
+#expiry-date:focus {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.dark #code-input:focus,
+.dark #admin-password:focus,
+.dark #expiry-date:focus {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+/* 日期选择器自定义 */
+input[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.6;
+    filter: invert(0.3);
+    transition: opacity 0.2s;
+}
+
+.dark input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.8);
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+}
+
+/* 响应式调整 */
+@media (max-width: 640px) {
+    .type-option {
+        padding: 1rem;
+    }
+
+    .type-option .text-lg {
+        font-size: 1.25rem;
+    }
+
+    #reward-modal img[alt="支付宝二维码"],
+    #reward-modal img[alt="微信支付二维码"] {
+        width: 120px !important;
+        height: 120px !important;
+        min-width: 120px !important;
+        min-height: 120px !important;
+    }
+
+    .card .icons {
+        flex-wrap: wrap;
+    }
+
+    .card .icons a {
+        min-width: 60px;
+    }
+}
+
+/* 移动端优化 */
+@media (max-width: 639px) {
+    #reward-modal,
+    #addcode-modal {
+        padding: 1rem;
+    }
+
+    #reward-modal > div,
+    #addcode-modal > div {
+        max-width: 95%;
+    }
+
+    #reward-modal img,
+    #addcode-modal img {
+        -webkit-touch-callout: default !important;
+        pointer-events: auto !important;
+    }
+}
+
+#reward-modal img,
+#addcode-modal img {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    -webkit-user-drag: none;
+}
+
+

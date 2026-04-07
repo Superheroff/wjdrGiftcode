@@ -1,0 +1,46 @@
+
+- 目录结构
+```
+app/
+├── static
+│   ├── css
+│   │   ├── input.css
+│   │   └── app966.css
+│   ├──js
+│   │   └── app966.js
+│   └── images
+├── templates
+│   └── index.html
+├── app.py
+├── auth.py
+├── datebase.py
+├── init_db.py
+├── models.py
+├── main.py
+├── sendEmail.py
+├── Dockerfile
+├── README.md
+├── requirements.txt
+├── .env
+├── uwsgi.ini
+└── package.json
+└── tailwind.config.js
+```
+
+- 环境要求
+  - Python 3.9+
+  - Node 20+
+
+- 快速开始
+```CMD
+pip install -r requirements.txt
+npm install
+python init_db.py
+npm run build
+```
+
+- Docker 部署
+```CMD
+docker build -t wjdrcode:1.0 .
+docker run -d -p 5201:5201 --name wjdr wjdrcode:1.0
+```
