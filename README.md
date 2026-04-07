@@ -1,13 +1,11 @@
 
-# WJDR Gift Code
-
 <div align="center">
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://github.com/Superheroff/wjdrGiftcode)
 [![node.js](https://img.shields.io/badge/node.js-20+-blue?logo=node.js)](https://github.com/Superheroff/wjdrGiftcode)
 [![License](https://img.shields.io/github/license/Superheroff/wjdrGiftcode.svg)](https://github.com/Superheroff/wjdrGiftcode/blob/master/LICENSE)
 
-无尽冬日兑换中心
+**WJDR-Gift-Code 无尽冬日兑换中心**
 
 </div>
 
