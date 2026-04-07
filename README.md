@@ -38,6 +38,8 @@ npm install
 python init_db.py
 npm run build
 ```
+- 配置环境变量
+  - 编辑 `.env` 文件，填写数据库连接、Redis主机、Redis端口、Redis密码、发送邮箱地址、发送邮箱密码等信息。
 
 - Docker 部署
 ```CMD
