@@ -47,8 +47,8 @@ def send_html_email(receiver_email, username, fid, codes):
     """发送HTML格式邮件"""
     smtp_server = "smtp.qq.com"
     port = 587
-    sender_email = "838210720@qq.com"
-    password = "mnquszljnuhcbdaa"
+    sender_email = SEND_EMAIL
+    password = EMAIL_PASSWORD
 
     subject = "【胖达网络】无尽冬日CDK兑换通知！"
 
