@@ -1,5 +1,3 @@
-from tkinter import image_names
-
 import requests
 import time
 import base64
