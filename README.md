@@ -25,6 +25,7 @@ app/
 ├── src/
 │   └── error_img/  # 存放识别失败的图片，用于自训练
 │   └── test/  # 演示效果
+├── .env
 ├── app.py
 ├── auth.py
 ├── datebase.py
@@ -35,7 +36,7 @@ app/
 ├── Dockerfile
 ├── README.md
 ├── requirements.txt
-├── .env
+├── webpack.config.js
 ├── uwsgi.ini
 └── package.json
 └── tailwind.config.js
@@ -59,7 +60,6 @@ npm install
 python init_db.py
 # 构建前端项目
 npm run build
-# 构建后端项目
 npm run webpackbuild
 ```
 ### 配置环境变量
