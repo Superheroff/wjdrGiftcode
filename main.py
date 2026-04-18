@@ -154,6 +154,7 @@ def UserCodeAll():
         code_data = []
         for code in active_codes:
             code_data.append(code.code)
+        print(user_data)
         cdkInfo = batch_check_users_have_cdks(user_data, code_data)
         userCodeList = cdkInfo['users_without_cdks'] # 取所有未使用的用户和兑换码详情
         if not userCodeList:
@@ -234,8 +235,9 @@ scheduler.add_job(
 scheduler.add_job(
     UserCodeAll,
     'cron',
-    hour='0,2,4,6,8,10,12,14,16,18,20,22',
+    hour='0,2,4,6,8,10,12,13,14,15,16,17,18,20,22',
     minute='0',
+    second='0',
     name='userCodeAll',
     id='2'
 )
@@ -437,7 +439,7 @@ def _Code():
     db.session.commit()
     del result['userInfo']
     update_user_cdk_statistics()
-    return jsonify(result)
+    return jsonify(msg='已执行兑换，可在近期兑换列表查看兑换结果')
 
 
 def _async_runAll(fid, code_data):
@@ -489,16 +491,16 @@ def _CodeAll():
     else:
         active_codes = redeemCode.query.filter_by(type=0).all()
     if not active_codes:
-        return {"msg": "兑换失败，当前无可用兑换码"}
+        return jsonify(msg='兑换失败，当前无可用兑换码')
     for code in active_codes:
         code_data.append(code.code)
     cdkInfo = batch_check_users_have_cdks([fid], code_data)
     code_data = cdkInfo['users_without_cdks'].get(fid, None)
     if not code_data:
-        return {'msg': '兑换失败，当前无可用兑换码'}
+        return jsonify(msg='兑换失败，当前无可用兑换码')
     setUserID(fid)
     threading.Thread(target=_async_runAll, args=(fid, code_data), daemon=True).start()
-    return {'msg': '已添加兑换任务，可在1~2分钟后刷新近期兑换列表查看兑换结果'}
+    return jsonify(msg='已添加兑换任务，可在1~2分钟后刷新近期兑换列表查看兑换结果')
 
 
 

@@ -22,6 +22,9 @@ app/
 │   └── images
 ├── templates
 │   └── index.html
+├── src/
+│   └── error_img/  # 存放识别失败的图片，用于自训练
+│   └── test/  # 演示效果
 ├── app.py
 ├── auth.py
 ├── datebase.py
@@ -56,6 +59,8 @@ npm install
 python init_db.py
 # 构建前端项目
 npm run build
+# 构建后端项目
+npm run webpackbuild
 ```
 ### 配置环境变量
   - 编辑 `.env` 文件，填写数据库连接、Redis主机、Redis端口、Redis密码、发送邮箱地址、发送邮箱密码等信息。

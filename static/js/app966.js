@@ -1128,7 +1128,7 @@ async function renderDanmaku() {
 
 class ApiSigner {
     constructor() {
-        this.secretKey = new TextEncoder().encode("A6f9!xK8#pL2$mQ7%vB4&nC3*zD1@wE5^");
+        this.secretKey = new TextEncoder().encode(process.env.SECRET_KEY);
     }
 
     async generateSignature(data, post = null) {

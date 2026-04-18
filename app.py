@@ -1,15 +1,19 @@
+from tkinter import image_names
+
 import requests
 import time
 import base64
 import hashlib
 import json
 import ddddocr
-from fake_useragent import UserAgent
 from datetime import datetime
 from urllib.parse import quote
 import pytz
+import os
 import re
 
+
+UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36'
 headers = {
     'accept': 'application/json, text/plain, */*',
     'accept-language': 'zh-CN,zh;q=0.9',
@@ -19,14 +23,8 @@ headers = {
     'pragma': 'no-cache',
     'priority': 'u=1, i',
     'referer': 'https://wjdr-giftcode.centurygames.cn/',
+    'user-agent': UserAgent,
 }
-
-def setHeaders():
-    ua = UserAgent()
-    user_agent = ua.random
-    headers['User-Agent'] = user_agent
-
-setHeaders()
 
 def generate_sign(data):
     sorted_keys = sorted(data.keys())
@@ -83,7 +81,16 @@ def login_fid(fid):
     return msg
 
 
-def get_captcha_code(fid):
+def save_image(image_bytes: bytes):
+    """
+    将验证码图片保存到本地文件
+    """
+    os.makedirs(os.path.dirname('src/error_img'), exist_ok=True)
+    with open(f'src/error_img/{int(time.time())}.png', 'wb') as f:
+        f.write(image_bytes)
+    return True
+
+def get_captcha_code(fid) -> tuple[str, bytes]:
     timestamp = round(time.time() * 1000)
     data = {
         "fid": fid,
@@ -92,24 +99,25 @@ def get_captcha_code(fid):
     }
     data = generate_sign(data)
     url_captcha = "https://wjdr-giftcode-api.campfiregames.cn/api/captcha"
-    res = requests.post(
-        url_captcha,
-        headers=headers,
-        data=data
-    )
     try:
+        res = requests.post(
+            url_captcha,
+            headers=headers,
+            data=data
+        )
         response_data = res.json()
         code = response_data.get('code', 10086)
         if code != 0:
-            return "验证码请求失败"
+            return "验证码请求失败", b''
         captcha_img_base64 = response_data['data']['img']
         captcha_img_base64 = captcha_img_base64.split(',')[1]
         captcha_img_bytes = base64.b64decode(captcha_img_base64)
         ocr = ddddocr.DdddOcr()
         result = ocr.classification(captcha_img_bytes)
-        return result
+        return result, captcha_img_bytes
     except Exception as e:
-        return '验证码请求失败'
+        print(e)
+        return '验证码请求失败', b''
 
 
 
@@ -160,24 +168,22 @@ def _run(fid, cdk):
     userInfo = login_fid(fid)
     if isinstance(userInfo, str):
         return userInfo
-    keyCode = get_captcha_code(fid)
+    keyCode, _ = get_captcha_code(fid)
     result, code = _gift(fid, cdk, keyCode)
     if code in [1, 5, 7, 10] or keyCode == '验证码请求失败':
-        setHeaders()
-        keyCode = get_captcha_code(fid)
+        keyCode, _ = get_captcha_code(fid)
         result, code = _gift(fid, cdk, keyCode)
     elif code == 8:
-        setHeaders()
         userInfo = login_fid(fid)
         if isinstance(userInfo, str):
             return userInfo
-        keyCode = get_captcha_code(fid)
+        keyCode, _ = get_captcha_code(fid)
         result, code = _gift(fid, cdk, keyCode)
     userInfo['cdk'] = cdk
     return {'msg': result, 'code': code, 'userInfo': userInfo}
 
 
-def _runAll(fid, cdkList):
+def _runAll(fid, cdkList, save_img=False):
     """一人兑换所有,统计成功失败数"""
     userInfo = login_fid(fid)
     if isinstance(userInfo, str):
@@ -188,21 +194,22 @@ def _runAll(fid, cdkList):
     cdk_res = ''  # 记录重复兑换的下次不兑换
     for cdk in cdkList:
         # print(f"当前兑换cdk:{cdk},兑换人:{fid}")
-        keyCode = get_captcha_code(fid)
+        keyCode, image_bytes = get_captcha_code(fid)
         # print("验证码识别结果", keyCode)
         _, code = _gift(fid, cdk, keyCode)
-        # print("兑换结果", _, code)
+        print("兑换结果", _, code)
         if code in [1, 5, 7, 10] or keyCode == '验证码请求失败':
-            setHeaders()
-            keyCode = get_captcha_code(fid)
+            if save_img and code == 5:
+                save_image(image_bytes)
+            keyCode, image_bytes = get_captcha_code(fid)
             _, code = _gift(fid, cdk, keyCode)
+            # print("兑换结果2", _, code)
             count_error+=1
         elif code == 8:
-            setHeaders()
             userInfo = login_fid(fid)
             if isinstance(userInfo, str):
                 return userInfo
-            keyCode = get_captcha_code(fid)
+            keyCode, image_bytes = get_captcha_code(fid)
             _, code = _gift(fid, cdk, keyCode)
         if code == 0:
             count_success += 1
@@ -258,13 +265,11 @@ class xhsApi:
     def __init__(self):
         self.cid = 'd9ba8ae07d955b83c3b04280f3dc5a4a'
         self.cookie = ''
-        self.userAgent = ''
+        self.userAgent = UserAgent
         self._headers = None
 
     def init(self):
         self.setCookie()
-        self.userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
-        # self.setUserAgent()
         self._headers = {
             'accept-language': 'zh-CN,zh;q=0.9',
             'cache-control': 'no-cache',
@@ -318,9 +323,6 @@ class xhsApi:
         res = requests.post(url=url_sign, data=data, headers={'cid': self.cid, 'timestamp': ts}).json()
         return res
 
-    def setUserAgent(self):
-        ua = UserAgent(browsers='Chrome')
-        self.userAgent = ua.random
 
     def setCookie(self):
         self.cookie = requests.get('https://www.app966.cn/zhushou/xhs.txt').text
