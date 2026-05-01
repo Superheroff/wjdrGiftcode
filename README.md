@@ -46,6 +46,17 @@ app/
   - Python 3.11+
   - Node 20+
 
+## 注意事项
+- 2026.05.01，调用`/api/gift_code`接口时，需添加代理，否则会返回：`请求错误`状态码为：`101`。
+- 在`_gift`函数中添加代理`代理IP普通即可无需高匿代理`，需要自己写个脚本从各大代理平台获取免费代理自己维护，或者等我更新。
+- ```python
+proxy = {
+    "http": "http://127.0.0.1:7890",
+}
+result = requests.post(url, headers=headers, data=data, proxies=proxy).text
+```
+
+
 ## 快速开始
 ```bash
 # 克隆项目
