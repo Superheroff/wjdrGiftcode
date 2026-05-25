@@ -30,7 +30,6 @@ const wechatQrcode = document.getElementById('wechat-qrcode');
 const aboutQqCopy = document.getElementById('about-qq-copy');
 const aboutWechatCopy = document.getElementById('about-wechat-copy');
 
-// 添加兑换码相关元素
 const addcodeToggle = document.getElementById('about-addcode-toggle');
 const addcodeModal = document.getElementById('addcode-modal');
 const addcodeClose = document.getElementById('addcode-close');
@@ -97,28 +96,453 @@ messageModal.addEventListener('click', function (e) {
     }
 });
 
-async function getSignedUrl(data, post = null) {
+
+let wasmReady = null;
+
+async function getWasm() {
+    if (!wasmReady) {
+        wasmReady = (async () => {
+            const response = await fetch('/static/js/app966.wasm');
+            const {instance} = await WebAssembly.instantiateStreaming(response, {});
+            return instance.exports;
+        })();
+    }
+    return wasmReady;
+}
+
+
+function getStringFromWasm(wasm, ptr) {
+    const memory = new Uint8Array(wasm.memory.buffer);
+    let end = ptr;
+    while (memory[end] !== 0) end++;
+    return new TextDecoder().decode(memory.slice(ptr, end));
+}
+
+function writeStringToWasm(wasm, str) {
+    const bytes = new TextEncoder().encode(str);
+    const ptr = wasm.alloc(bytes.length);
+    const memory = new Uint8Array(wasm.memory.buffer);
+    memory.set(bytes, ptr);
+    return {ptr, len: bytes.length};
+}
+
+class ApiSigner {
+    constructor() {}
+
+    _buildRawQueryString(obj) {
+        if (!obj || Object.keys(obj).length === 0) return '';
+        const pairs = [];
+        for (const [key, value] of Object.entries(obj)) {
+            pairs.push(`${key}=${value}`);
+        }
+        return pairs.join('&');
+    }
+
+    _buildEncodedQueryString(obj) {
+        if (!obj || Object.keys(obj).length === 0) return '';
+        const params = new URLSearchParams();
+        for (const [key, value] of Object.entries(obj)) {
+            params.append(key, value);
+        }
+        return params.toString();
+    }
+
+    async generateSignature(params, data = null, bodyFormat = 'form') {
+        const wasm = await getWasm();
+        const timestamp = Math.floor(Date.now() / 1000).toString();
+
+        const signQueryObj = { ...params, timestamp };
+        const signQueryStr = this._buildRawQueryString(signQueryObj);
+        const { ptr: qPtr, len: qLen } = writeStringToWasm(wasm, signQueryStr);
+
+        let bodyPtr = 0;
+        let bodyLen = 0;
+        let bodyStr = '';
+        let bodyFormatCode = 0; // 0: form, 1: json
+
+        const hasBody = data && Object.keys(data).length > 0;
+        if (hasBody) {
+            if (bodyFormat === 'json') {
+                bodyStr = JSON.stringify(data);
+                bodyFormatCode = 1;
+            } else { // 'form'
+                bodyStr = this._buildEncodedQueryString(data);
+                bodyFormatCode = 0;
+            }
+            const { ptr, len } = writeStringToWasm(wasm, bodyStr);
+            bodyPtr = ptr;
+            bodyLen = len;
+        }
+
+        const resultPtr = wasm.sign(qPtr, qLen, bodyPtr, bodyLen, bodyFormatCode);
+        const signature = getStringFromWasm(wasm, resultPtr);
+        wasm.free_result(resultPtr);
+        wasm.dealloc(qPtr, qLen);
+        if (bodyPtr !== 0) wasm.dealloc(bodyPtr, bodyLen);
+        const originalQuery = this._buildRawQueryString(params);
+        const urlQuery = originalQuery
+            ? `${originalQuery}&x-sign=${encodeURIComponent(signature)}&timestamp=${timestamp}`
+            : `x-sign=${encodeURIComponent(signature)}&timestamp=${timestamp}`;
+        const url = `?${urlQuery}`;
+        return { url, data: bodyStr };
+    }
+}
+
+
+function decodeVarint(buffer, offset) {
+    let value = 0;
+    let shift = 0;
+    let pos = offset;
+    while (true) {
+        const byte = buffer[pos++];
+        value |= (byte & 0x7f) << shift;
+        if ((byte & 0x80) === 0) break;
+        shift += 7;
+    }
+    return {value: value >>> 0, length: pos - offset};  // 转为无符号 32 位
+}
+
+/**
+ * 从 buffer 的 offset 处开始解析一个字段，返回 { fieldNumber, wireType, offset: 下一个字段的起始位置 }
+ */
+function readTag(buffer, offset) {
+    const {value: tag, length} = decodeVarint(buffer, offset);
+    const wireType = tag & 0x07;
+    const fieldNumber = tag >>> 3;
+    return {fieldNumber, wireType, offset: offset + length};
+}
+
+/**
+ * 读取指定长度的字节数据（wire type 2）
+ */
+function readBytes(buffer, offset, length) {
+    return buffer.slice(offset, offset + length);
+}
+
+// ========== 弹幕消息解析 (DanmakuResponse + DanmakuItem) ==========
+function decodeDanmakuItem(buffer, offset) {
+    const item = {};
+    let pos = offset;
+    while (pos < buffer.length) {
+        const {fieldNumber, wireType, offset: nextOffset} = readTag(buffer, pos);
+        pos = nextOffset;
+        if (fieldNumber === 1) { // string amount
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            item.amount = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else if (fieldNumber === 2) { // string avatar
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            item.avatar = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else if (fieldNumber === 3) { // int64 fid (作为 varint 存储)
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            item.fid = value;
+        } else if (fieldNumber === 4) { // string username
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            item.username = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else {
+            // 跳过未知字段
+            pos = skipField(buffer, pos, wireType);
+        }
+    }
+    return item;
+}
+
+function decodeDanmakuResponse(buffer) {
+    const message = {data: []};
+    let pos = 0;
+    while (pos < buffer.length) {
+        const {fieldNumber, wireType, offset: nextOffset} = readTag(buffer, pos);
+        pos = nextOffset;
+        if (fieldNumber === 1) { // int32 code
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            message.code = value;
+        } else if (fieldNumber === 2) { // int32 count
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            message.count = value;
+        } else if (fieldNumber === 3) { // repeated DanmakuItem (length-delimited)
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            message.data.push(decodeDanmakuItem(readBytes(buffer, pos, len), 0));
+            pos += len;
+        } else if (fieldNumber === 4) { // string message
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            message.message = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else {
+            pos = skipField(buffer, pos, wireType);
+        }
+    }
+    return message;
+}
+
+// ========== 近期兑换人消息解析 (RecentExchangersResponse) ==========
+function decodeExchangeUser(buffer, offset) {
+    const user = {};
+    let pos = offset;
+    while (pos < buffer.length) {
+        const {fieldNumber, wireType, offset: nextOffset} = readTag(buffer, pos);
+        pos = nextOffset;
+        if (fieldNumber === 1) { // int64 fid
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            user.fid = value;
+        } else if (fieldNumber === 2) { // string nickname
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            user.nickname = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else if (fieldNumber === 3) { // int32 kid
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            user.kid = value;
+        } else if (fieldNumber === 4) { // int32 stove_lv
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            user.stove_lv = value;
+        } else if (fieldNumber === 5) { // string stove_lv_content
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            user.stove_lv_content = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else if (fieldNumber === 6) { // string avatar_image
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            user.avatar_image = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else if (fieldNumber === 7) { // int32 total_recharge_amount
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            user.total_recharge_amount = value;
+        } else if (fieldNumber === 8) { // string cdk
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            user.cdk = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else if (fieldNumber === 9) { // string cdk_res
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            user.cdk_res = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else if (fieldNumber === 10) { // bool auto
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            user.auto = Boolean(value);
+        } else if (fieldNumber === 11) { // bool repeat
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            user.repeat = Boolean(value);
+        } else if (fieldNumber === 12) { // string timestamp
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            user.timestamp = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else {
+            pos = skipField(buffer, pos, wireType);
+        }
+    }
+    return user;
+}
+
+function decodePagination(buffer, offset) {
+    const page = {};
+    let pos = offset;
+    while (pos < buffer.length) {
+        const {fieldNumber, wireType, offset: nextOffset} = readTag(buffer, pos);
+        pos = nextOffset;
+        if (fieldNumber === 1) { // int32 page
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            page.page = value;
+        } else if (fieldNumber === 2) { // int32 page_size
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            page.page_size = value;
+        } else if (fieldNumber === 3) { // int32 total_count
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            page.total_count = value;
+        } else if (fieldNumber === 4) { // int32 total_pages
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            page.total_pages = value;
+        } else if (fieldNumber === 5) { // bool has_next
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            page.has_next = Boolean(value);
+        } else {
+            pos = skipField(buffer, pos, wireType);
+        }
+    }
+    return page;
+}
+
+function decodeRecentExchangersResponse(buffer) {
+    const message = {data: [], pages: null};
+    let pos = 0;
+    while (pos < buffer.length) {
+        const {fieldNumber, wireType, offset: nextOffset} = readTag(buffer, pos);
+        pos = nextOffset;
+        if (fieldNumber === 1) { // repeated ExchangeUser
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            message.data.push(decodeExchangeUser(readBytes(buffer, pos, len), 0));
+            pos += len;
+        } else if (fieldNumber === 2) { // Pagination (length-delimited)
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            message.pages = decodePagination(readBytes(buffer, pos, len), 0);
+            pos += len;
+        } else {
+            pos = skipField(buffer, pos, wireType);
+        }
+    }
+    return message;
+}
+
+// ========== 兑换码列表消息解析 (ExchangeCodeResponse) ==========
+function decodeExchangeCodeItem(buffer, offset) {
+    const item = {
+        code: '',
+        created_at: '',
+        endTime: '',
+        failed: 0,
+        success: 0,
+        total: 0,
+        type: 0
+    };
+    let pos = offset;
+    while (pos < buffer.length) {
+        const {fieldNumber, wireType, offset: nextOffset} = readTag(buffer, pos);
+        pos = nextOffset;
+        if (fieldNumber === 1) {
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            item.code = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else if (fieldNumber === 2) {
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            item.created_at = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else if (fieldNumber === 3) {
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            item.endTime = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else if (fieldNumber === 4) {
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            item.failed = value;
+        } else if (fieldNumber === 5) {
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            item.success = value;
+        } else if (fieldNumber === 6) {
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            item.total = value;
+        } else if (fieldNumber === 7) {
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            item.type = value;
+        } else {
+            pos = skipField(buffer, pos, wireType);
+        }
+    }
+    return item;
+}
+
+function decodeExchangeCodeResponse(buffer) {
+    const message = {data: []};
+    let pos = 0;
+    while (pos < buffer.length) {
+        const {fieldNumber, wireType, offset: nextOffset} = readTag(buffer, pos);
+        pos = nextOffset;
+        if (fieldNumber === 1) { // int32 code
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            message.code = value;
+        } else if (fieldNumber === 2) { // int32 count
+            const {value, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            message.count = value;
+        } else if (fieldNumber === 3) { // repeated ExchangeCodeItem
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            message.data.push(decodeExchangeCodeItem(readBytes(buffer, pos, len), 0));
+            pos += len;
+        } else if (fieldNumber === 4) { // string message
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize;
+            message.message = new TextDecoder().decode(readBytes(buffer, pos, len));
+            pos += len;
+        } else {
+            pos = skipField(buffer, pos, wireType);
+        }
+    }
+    return message;
+}
+
+// 跳过未知字段（根据 wire type）
+function skipField(buffer, offset, wireType) {
+    let pos = offset;
+    switch (wireType) {
+        case 0: // varint
+            decodeVarint(buffer, pos); // 直接消费掉
+            // 需要计算实际长度，这里改写：
+        {
+            let temp = pos;
+            while (buffer[temp] & 0x80) temp++;
+            pos = temp + 1;
+        }
+            break;
+        case 1: // 64-bit (fixed64)
+            pos += 8;
+            break;
+        case 5: // 32-bit (fixed32)
+            pos += 4;
+            break;
+        case 2: // length-delimited
+            const {value: len, length: lenSize} = decodeVarint(buffer, pos);
+            pos += lenSize + len;
+            break;
+        case 3: // start group (已废弃)
+        case 4: // end group (已废弃)
+        default:
+            throw new Error(`Unsupported wire type: ${wireType}`);
+    }
+    return pos;
+}
+
+
+async function getSignedUrl(params, data = null, bodyFormat='') {
     const signer = new ApiSigner();
-    return await signer.generateSignature(data, post);
+    return await signer.generateSignature(params, data, bodyFormat);
 }
 
 async function getGiftCode(page, size) {
     page = page || 1;
     size = size || 20;
-
     try {
-        const params = {
-            page: page,
-            size: size
+        const params = {page, size};
+        const signature = await getSignedUrl(params);
+        const url = `/api/r/getGiftCode${signature.url}`;
+        const res = await fetch(url);
+        const buffer = new Uint8Array(await res.arrayBuffer());
+        const decoded = decodeRecentExchangersResponse(buffer);
+        return {
+            data: decoded.data,
+            has_next: decoded.pages ? decoded.pages.has_next : false
         };
-        let signature = await getSignedUrl(params);
-        let url = `/api/r/getGiftCode${signature.url}`;
-        const res = await fetch(url, {
-            method: 'GET',
-        });
-
-        return await res.json();
-
     } catch (error) {
         await showMessage(`获取近期兑换失败，原因：${String(error)}`, '失败', 'error');
         return {data: [], has_next: false};
@@ -137,7 +561,7 @@ async function giftCode(accountId, code) {
             cdk: code
         };
 
-        let signature = await getSignedUrl(null, data);
+        let signature = await getSignedUrl(null, data, 'json');
         let url = `/api/giftCode${signature.url}`;
 
         const res = await fetch(url, {
@@ -156,7 +580,7 @@ async function giftCode(accountId, code) {
     }
 }
 
-async function giftCodeAll(accountId, t='0') {
+async function giftCodeAll(accountId, t = '0') {
     if (!accountId) {
         showToast('请输入正确的账号', 'error');
         return undefined;
@@ -168,7 +592,7 @@ async function giftCodeAll(accountId, t='0') {
             type: t
         };
 
-        let signature = await getSignedUrl(null, data);
+        let signature = await getSignedUrl(null, data, 'json');
         let url = `/api/giftCodeAll${signature.url}`;
 
         const res = await fetch(url, {
@@ -197,7 +621,7 @@ async function delUser(accountId, email) {
             email: email
         };
 
-        let signature = await getSignedUrl(null, data);
+        let signature = await getSignedUrl(null, data, 'json');
         let url = `/api/delUser${signature.url}`;
 
         const res = await fetch(url, {
@@ -227,7 +651,7 @@ async function addUser(accountId, email) {
             email: email
         };
 
-        let signature = await getSignedUrl(null, data);
+        let signature = await getSignedUrl(null, data, 'json');
         let url = `/api/addUser${signature.url}`;
 
         const res = await fetch(url, {
@@ -247,32 +671,25 @@ async function addUser(accountId, email) {
 
 async function getGiftCodeAll() {
     try {
-        let signature = await getSignedUrl(null);
-        let url = `/api/getGiftCode${signature.url}`;
-
-        const res = await fetch(url, {
-            method: 'GET',
-        });
-
-        return await res.json();
-
+        const signature = await getSignedUrl(null);
+        const url = `/api/getGiftCode${signature.url}`;
+        const res = await fetch(url);
+        const buffer = new Uint8Array(await res.arrayBuffer());
+        return decodeExchangeCodeResponse(buffer);
     } catch (error) {
         await showMessage(`获取兑换码列表失败，原因：${String(error)}`, '失败', 'error');
         return {data: []};
     }
 }
 
+
 async function getDanmuAll() {
     try {
-        let signature = await getSignedUrl(null);
-        let url = `/api/getDanmu${signature.url}`;
-
-        const res = await fetch(url, {
-            method: 'GET',
-        });
-
-        return await res.json();
-
+        const signature = await getSignedUrl(null);
+        const url = `/api/getDanmu${signature.url}`;
+        const res = await fetch(url);
+        const buffer = new Uint8Array(await res.arrayBuffer());
+        return decodeDanmakuResponse(buffer);
     } catch (error) {
         showToast(`获取赞助弹幕列表失败，原因：${String(error)}`, 'error');
         return {data: []};
@@ -320,7 +737,7 @@ function resetAddCodeForm() {
     // 重置类型选项样式
     if (typeOptions.length > 0) {
         typeOptions.forEach(option => {
-            option.addEventListener('click', function() {
+            option.addEventListener('click', function () {
                 const type = this.getAttribute('data-type');
                 // 1. 切换视觉选中的 UI 效果 (Tailwind border)
                 typeOptions.forEach(opt => opt.classList.replace('border-primary-500', 'border-slate-200'));
@@ -465,7 +882,7 @@ async function addGiftCode(code, type = '0', endTime = '', pwd = '') {
             pwd: pwd
         };
 
-        let signature = await getSignedUrl(null, data);
+        let signature = await getSignedUrl(null, data, 'json');
         let url = `/api/addGiftCode${signature.url}`;
 
         const res = await fetch(url, {
@@ -479,7 +896,7 @@ async function addGiftCode(code, type = '0', endTime = '', pwd = '') {
         return await res.json();
     } catch (error) {
         console.error('添加兑换码失败:', error);
-        return { code: -1, msg: '网络请求失败' };
+        return {code: -1, message: '网络请求失败'};
     }
 }
 
@@ -543,7 +960,7 @@ async function loadExchangeRecords(page) {
 
     renderExchangeRecords(displayedRecords);
 
-    if (res.pages.has_next === false) {
+    if (res.has_next === false) {
         loadMoreBtn.disabled = true;
         loadMoreBtn.textContent = '没有更多数据';
         loadMoreBtn.classList.add('opacity-50', 'cursor-not-allowed');
@@ -719,7 +1136,7 @@ if (redeemBtn) {
                 if (res.code === 0) {
                     await showMessage(`恭喜你 ${accountId} \n成功兑换: ${code}`, '成功', 'success');
                 } else {
-                    await showMessage(`兑换失败，${res.msg}`, '失败', 'error');
+                    await showMessage(`兑换失败，${res.message}`, '失败', 'error');
                 }
 
             } catch (error) {
@@ -745,7 +1162,7 @@ if (redeemAllBtn) {
             try {
                 let res = await giftCodeAll(accountId);
                 if (res === undefined) return;
-                await showMessage(res.msg, '操作提示', 'info');
+                await showMessage(res.message, '操作提示', 'info');
             } catch (error) {
                 showToast('请求失败', 'error');
             } finally {
@@ -769,7 +1186,7 @@ if (redeemAllBtn2) {
             try {
                 let res = await giftCodeAll(accountId, "1");
                 if (res === undefined) return;
-                await showMessage(res.msg, '操作提示', 'info');
+                await showMessage(res.message, '操作提示', 'info');
             } catch (error) {
                 showToast('请求失败', 'error');
             } finally {
@@ -793,7 +1210,7 @@ if (addAccountBtn) {
             try {
                 let res = await addUser(accountId, email);
                 if (res === undefined) return;
-                await showMessage(res.msg, '操作提示', 'info');
+                await showMessage(res.message, '操作提示', 'info');
             } catch (error) {
                 showToast('请求失败', 'error');
             } finally {
@@ -816,7 +1233,7 @@ if (delAccountBtn) {
             try {
                 let res = await delUser(accountId, email);
                 if (res === undefined) return;
-                await showMessage(res.msg, '操作提示', 'info');
+                await showMessage(res.message, '操作提示', 'info');
             } catch (error) {
                 showToast('请求失败', 'error');
             } finally {
@@ -832,11 +1249,16 @@ if (delAccountBtn) {
 function hideMiddleFour(id) {
     if (!id) return '';
     const strId = String(id);
-    if (strId.length <= 8) return strId;
-    const firstFour = strId.substring(0, 3);
-    const lastFour = strId.substring(strId.length - 3);
-    return `${firstFour}***${lastFour}`;
+    const len = strId.length;
+    if (len < 3) return '';
+    const remaining = len - 3;
+    const prefixLen = Math.floor(remaining / 2);
+    const suffixLen = Math.ceil(remaining / 2);
+    const firstPart = strId.substring(0, prefixLen);
+    const lastPart = strId.substring(len - suffixLen);
+    return `${firstPart}***${lastPart}`;
 }
+
 
 function updateCodeCount() {
     const codeCount = document.getElementById('code-count');
@@ -883,13 +1305,13 @@ function renderExchangeRecords(records) {
                         <div class="relative">
                             <img src="${record.avatar_image}" alt="头像" class="w-12 h-12 sm:w-14 sm:h-14 rounded-full object-cover border-2 border-white dark:border-gray-700 shadow-sm">
                             ${record.stove_lv_content && record.stove_lv_content.length > 3 ?
-                `<div class="absolute -bottom-0 -right-1 w-5 h-5 rounded-full overflow-hidden border-2 border-white dark:border-gray-800 shadow-md bg-white dark:bg-gray-900">
+            `<div class="absolute -bottom-0 -right-1 w-5 h-5 rounded-full overflow-hidden border-2 border-white dark:border-gray-800 shadow-md bg-white dark:bg-gray-900">
                                 <img src="${record.stove_lv_content}" alt="等级图标" class="w-full h-full object-cover">
                             </div>` :
-                `<div class="absolute -bottom-0 -right-1 w-5 h-5 rounded-full border-2 border-white dark:border-gray-800 bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-md">
+            `<div class="absolute -bottom-0 -right-1 w-5 h-5 rounded-full border-2 border-white dark:border-gray-800 bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-md">
                                 <span class="text-xs text-white font-bold">${record.stove_lv || ''}</span>
                             </div>`
-            }
+        }
                         </div>
 
                         <!-- 移动端昵称和ID -->
@@ -1126,51 +1548,6 @@ async function renderDanmaku() {
     });
 }
 
-class ApiSigner {
-    constructor() {
-        this.secretKey = new TextEncoder().encode(process.env.SECRET_KEY);
-    }
-
-    async generateSignature(data, post = null) {
-        const timestamp = Math.floor(Date.now() / 1000).toString();
-        let dataWithTimestamp = {...data};
-        if (post) {
-            dataWithTimestamp = {...post};
-        }
-        dataWithTimestamp['timestamp'] = timestamp;
-
-        const sortedData = Object.entries(dataWithTimestamp)
-            .sort(([keyA], [keyB]) => keyA.localeCompare(keyB));
-        const signStr = sortedData.map(([k, v]) => `${k}=${v}`).join('&');
-
-        const encoder = new TextEncoder();
-        const key = await crypto.subtle.importKey(
-            'raw',
-            this.secretKey,
-            {name: 'HMAC', hash: 'SHA-256'},
-            false,
-            ['sign']
-        );
-
-        const signatureBuffer = await crypto.subtle.sign(
-            'HMAC',
-            key,
-            encoder.encode(signStr)
-        );
-
-        const signature = Array.from(new Uint8Array(signatureBuffer))
-            .map(b => b.toString(16).padStart(2, '0'))
-            .join('');
-        let params = ''
-        if (data) {
-            params = new URLSearchParams(data).toString() + '&';
-        }
-        return {
-            url: `?${params}signature=${signature}&timestamp=${timestamp}`,
-            data: new URLSearchParams(post).toString()
-        };
-    }
-}
 
 function saveImage(imageElement, filename) {
     if (!imageElement) return;
@@ -1250,7 +1627,7 @@ if (addcodeModal) {
 // 类型选项点击事件
 if (typeOptions && typeOptions.length > 0) {
     typeOptions.forEach(option => {
-        option.addEventListener('click', function() {
+        option.addEventListener('click', function () {
             const type = this.getAttribute('data-type');
 
             // 更新单选按钮状态
@@ -1367,7 +1744,7 @@ if (submitAddcodeBtn) {
                 }, 500);
             } else {
 
-                await showMessage(`${result.msg || '未知错误'}`, '失败', 'error');
+                await showMessage(`${result.message || '未知错误'}`, '失败', 'error');
             }
         } catch (error) {
             await showMessage('添加失败，请检查网络连接', '错误', 'error');
@@ -1404,7 +1781,7 @@ if (aboutWechatCopy) {
 }
 
 
-function closeMessageModal() {
+window.closeMessageModal = function () {
     const innerModal = messageModal.querySelector('.transform');
     // 1. 触发缩小和变透明动画
     messageModal.classList.add('opacity-0');
@@ -1439,5 +1816,5 @@ const observer = new MutationObserver((mutations) => {
 
 ['message-modal', 'reward-modal', 'addcode-modal'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) observer.observe(el, { attributes: true, attributeFilter: ['class'] });
+    if (el) observer.observe(el, {attributes: true, attributeFilter: ['class']});
 });

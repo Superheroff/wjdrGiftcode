@@ -1,3 +1,4 @@
+import random
 import requests
 import time
 import base64
@@ -6,12 +7,56 @@ import json
 import ddddocr
 from datetime import datetime
 from urllib.parse import quote
+from fake_useragent import UserAgent
 import pytz
 import os
 import re
+from bs4 import BeautifulSoup
 
 
-UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36'
+
+
+def fetch_kaidaili() -> list:
+    proxies = []
+    url = "https://www.kuaidaili.com/free/inha/"
+    _headers = {
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'accept-language': 'zh-CN,zh;q=0.9',
+        'cache-control': 'no-cache',
+        'pragma': 'no-cache',
+        'priority': 'u=0, i',
+        'referer': 'https://www.kuaidaili.com/free/dps/',
+        'sec-ch-ua': '"Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-user': '?1',
+        'upgrade-insecure-requests': '1',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
+    }
+    try:
+        resp = requests.get(url, headers=_headers, timeout=10)
+        resp.encoding = 'utf-8'
+        soup = BeautifulSoup(resp.text, 'lxml')
+        tbody = soup.find('tbody', class_='kdl-table-tbody')
+        if not tbody:
+            return proxies
+        rows = tbody.find_all('tr')
+        for row in rows:
+            cols = row.find_all('td')
+            if len(cols) >= 2:
+                ip = cols[0].text.strip()
+                port = cols[1].text.strip()
+                proxies.append(f"{ip}:{port}")
+    except Exception as e:
+        print(f"抓取失败: {e}")
+    if len(proxies) > 5: proxies = proxies[:5]
+    print("proxies:", proxies)
+    return proxies
+
+
 headers = {
     'accept': 'application/json, text/plain, */*',
     'accept-language': 'zh-CN,zh;q=0.9',
@@ -21,8 +66,24 @@ headers = {
     'pragma': 'no-cache',
     'priority': 'u=1, i',
     'referer': 'https://wjdr-giftcode.centurygames.cn/',
-    'user-agent': UserAgent,
 }
+
+def preprocess_exchangers_json(json_dict):
+    data = json_dict
+    for user in data.get("data", []):
+        if "stove_lv_content" in user and not isinstance(user["stove_lv_content"], str):
+            user["stove_lv_content"] = str(user["stove_lv_content"])
+    return data
+
+
+
+def setHeaders():
+    ua = UserAgent()
+    headers['user-agent'] = ua.chrome
+
+
+
+setHeaders()
 
 def generate_sign(data):
     sorted_keys = sorted(data.keys())
@@ -119,7 +180,7 @@ def get_captcha_code(fid) -> tuple[str, bytes]:
 
 
 
-def _gift(fid, cdk, captcha_code):
+def _gift(fid, cdk, captcha_code, _IPs):
     if not captcha_code or len(captcha_code) < 4 or captcha_code == '验证码请求失败':
         return "验证码识别错误", 1
     timestamp = round(time.time() * 1000)
@@ -132,7 +193,13 @@ def _gift(fid, cdk, captcha_code):
     data = generate_sign(data)
     url = "https://wjdr-giftcode-api.campfiregames.cn/api/gift_code"
     try:
-        response = requests.post(url, headers=headers, data=data).json()
+        proxy = {}
+        if _IPs:
+            proxy = {
+                "http": f"http://{random.choice(_IPs)}",
+            }
+        result = requests.post(url, headers=headers, data=data, proxies=proxy).text
+        response = json.loads(result)
         message = response['msg']
         if message == "SUCCESS":
             return "兑换成功", 0
@@ -158,31 +225,37 @@ def _gift(fid, cdk, captcha_code):
             return "兑换码不存在", 11
         else:
             return message, 100
-    except Exception:
+    except Exception as e:
+        print(f'兑换失败:{e}')
+        setHeaders()
         return "请求错误", 101
 
 def _run(fid, cdk):
     """一人兑换一个"""
     userInfo = login_fid(fid)
+    print(userInfo)
     if isinstance(userInfo, str):
         return userInfo
     keyCode, _ = get_captcha_code(fid)
-    result, code = _gift(fid, cdk, keyCode)
+    print(keyCode)
+    result, code = _gift(fid, cdk, keyCode, [])
     if code in [1, 5, 7, 10] or keyCode == '验证码请求失败':
         keyCode, _ = get_captcha_code(fid)
-        result, code = _gift(fid, cdk, keyCode)
+        result, code = _gift(fid, cdk, keyCode, [])
     elif code == 8:
         userInfo = login_fid(fid)
         if isinstance(userInfo, str):
             return userInfo
         keyCode, _ = get_captcha_code(fid)
-        result, code = _gift(fid, cdk, keyCode)
+        result, code = _gift(fid, cdk, keyCode, [])
     userInfo['cdk'] = cdk
     return {'msg': result, 'code': code, 'userInfo': userInfo}
 
 
-def _runAll(fid, cdkList, save_img=False):
+def _runAll(fid, cdkList, save_img=False, _IPs=None):
     """一人兑换所有,统计成功失败数"""
+    if _IPs is None:
+        _IPs = []
     userInfo = login_fid(fid)
     if isinstance(userInfo, str):
         return userInfo
@@ -194,13 +267,13 @@ def _runAll(fid, cdkList, save_img=False):
         # print(f"当前兑换cdk:{cdk},兑换人:{fid}")
         keyCode, image_bytes = get_captcha_code(fid)
         # print("验证码识别结果", keyCode)
-        _, code = _gift(fid, cdk, keyCode)
+        _, code = _gift(fid, cdk, keyCode, _IPs)
         print("兑换结果", _, code)
         if code in [1, 5, 7, 10] or keyCode == '验证码请求失败':
             if save_img and code == 5:
                 save_image(image_bytes)
             keyCode, image_bytes = get_captcha_code(fid)
-            _, code = _gift(fid, cdk, keyCode)
+            _, code = _gift(fid, cdk, keyCode, _IPs)
             # print("兑换结果2", _, code)
             count_error+=1
         elif code == 8:
@@ -208,7 +281,7 @@ def _runAll(fid, cdkList, save_img=False):
             if isinstance(userInfo, str):
                 return userInfo
             keyCode, image_bytes = get_captcha_code(fid)
-            _, code = _gift(fid, cdk, keyCode)
+            _, code = _gift(fid, cdk, keyCode, _IPs)
         if code == 0:
             count_success += 1
             cdk_success += cdk + ','
@@ -228,14 +301,16 @@ def _runUserAll(userCdkList: dict):
     """
     data = []
     deleteUser = []
+    _IPs = fetch_kaidaili()
     for key, value in userCdkList.items():
         # print(f"正在帮{key}兑换", value)
-        result = _runAll(key, value)
+        result = _runAll(key, value, _IPs=_IPs)
         # print(result)
         if any(key in result for key in ('大熔炉等级低于9', '用户角色不存在')):
             deleteUser.append(key)
             continue
         if isinstance(result, str):
+            _IPs = fetch_kaidaili()
             continue
         data.append(result)
         time.sleep(2)
@@ -263,7 +338,7 @@ class xhsApi:
     def __init__(self):
         self.cid = 'd9ba8ae07d955b83c3b04280f3dc5a4a'
         self.cookie = ''
-        self.userAgent = UserAgent
+        self.userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36'
         self._headers = None
 
     def init(self):
@@ -375,5 +450,5 @@ if __name__ == '__main__':
     # api.init()
     # codeList = api.PostInfo(10)
     # print(codeList)
-    # _run('661455442', 'WJDR350W')
+    # _run('821629893', 'WJDR350W')
 
