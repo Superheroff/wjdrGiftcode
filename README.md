@@ -50,13 +50,6 @@ app/
 - **我当前项目在算法校验上与开源版本存在较大差异，其它无区别**
 
 
-```python
-proxy = {
-    "http": "http://127.0.0.1:7890",
-}
-result = requests.post(url, headers=headers, data=data, proxies=proxy).text
-```
-
 
 ## 快速开始
 ```bash
